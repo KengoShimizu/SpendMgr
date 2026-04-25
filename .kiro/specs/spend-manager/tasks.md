@@ -1,0 +1,287 @@
+# Implementation Plan: SpendMgr
+
+## Overview
+
+個人経費記録Androidアプリ（SpendMgr）の実装計画。Kotlin + Jetpack Compose + MVVM + Hiltアーキテクチャで構築し、Google Sheets API / Google Drive APIと連携する。Androidプロジェクトの初期セットアップから始め、ドメインロジック → データ層 → ViewModel → UI層の順にインクリメンタルに実装する。
+
+## Tasks
+
+- [x] 1. Androidプロジェクトの初期セットアップ
+  - [x] 1.1 Android Studioプロジェクト構造の作成 (Gradle Kotlin DSL)
+    - `kiro-workspace/SpendMgr/` にAndroidプロジェクトを作成
+    - `build.gradle.kts`（プロジェクトルート）と `app/build.gradle.kts` を作成
+    - `settings.gradle.kts`、`gradle.properties`、`local.properties` を作成
+    - Gradle Wrapperファイル（`gradlew`、`gradlew.bat`、`gradle/wrapper/`）を配置
+    - `AndroidManifest.xml` にINTERNETパーミッションを設定
+    - パッケージ構造: `com.example.spendmgr`（ui / viewmodel / domain / data / di）
+    - _Requirements: 1.1_
+  - [x] 1.2 依存関係の設定
+    - Jetpack Compose + Material 3
+    - Hilt (DI)
+    - Room（ローカルDB）
+    - DataStore (Preferences)
+    - Google Sheets API v4 / Google Drive API v3
+    - Google Sign-In (Credential Manager)
+    - AndroidX ViewModel + StateFlow
+    - テスト: JUnit 5, MockK, Kotest (Property-Based Testing), Compose UI Test
+    - _Requirements: 1.1_
+
+- [x] 2. データモデルとドメインロジックの実装
+  - [x] 2.1 データモデルの定義
+    - `ExpenseRecord`、`AppendResult`、`UndoTarget`、`SummaryResult`、`ExpenseUiState` を作成
+    - `ValidationResult`、`ValidationError`、`SpreadsheetTarget` を作成
+    - Room Entity: `CategoryHistoryEntity`、`PendingExpenseEntity` を作成
+    - _Requirements: 2.2, 2.3, 5.1, 5.3_
+  - [x] 2.2 ExpenseValidatorの実装
+    - 金額（空文字列 or "¥"のみ）、カテゴリ、認証状態のバリデーション
+    - バリデーション優先順位: 金額 → カテゴリ → 認証状態
+    - _Requirements: 6.1, 6.2, 7.2_
+  - [ ]* 2.3 Property 5: 入力バリデーションの正確性のプロパティテスト
+    - ==Property 5: 入力バリデーションの正確性==
+    - Arb.string()で金額・カテゴリ、Arb.boolean()で認証状態を生成し、validate()の戻り値を検証
+    - **Validates: Requirements 6.1, 6.2, 7.2**
+  - [x] 2.4 金額フォーマットユーティリティの実装
+    - 数字文字列 → "¥" 付きカンマ区切り表示変換
+    - 表示文字列 → 内部数値変換処理
+    - _Requirements: 2.2, 2.3_
+  - [x] 2.5 日付フォーマットユーティリティの実装
+    - LocalDate → 「M/d」形式変換（先頭ゼロなし）
+    - _Requirements: 3.1, 3.3_
+  - [ ]* 2.6 日付のM/dフォーマットユーティリティのプロパティテスト
+    - ==Property 2: 日付のM/dフォーマット==
+    - Arb.localDate()で日付を生成し、M/d形式の文字列をパースすると元の月・日と一致することを検証
+    - **Validates: Requirements 3.1, 3.3**
+  - [x] 2.7 SummaryCacheの実装
+    - StateFlowベースのyearlyTotal / monthlyTotalキャッシュ
+    - update()、adjust(delta: Int)、clear() メソッド（正の値で加算、負の値で減算）
+    - _Requirements: 13.3, 13.4_
+  - [ ]* 2.8 Property 17: 合計額キャッシュの加減算整合性のプロパティテスト
+    - ==Property 17: 合計額キャッシュの加減算整合性==
+    - Arb.int()で初期値、Arb.list(Arb.int())でdeltaシーケンスを生成し、adjust()の加減算結果を検証
+    - **Validates: Requirements 13.3, 13.4**
+  - [x] 2.9 Checkpoint - データモデルとドメインロジックの検証
+    - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 3. データ層の実装（Room + DataStore + API）
+  - [x] 3.1 Room Databaseのセットアップ
+    - `SpendMgrDatabase` の定義（`CategoryHistoryEntity`、`PendingExpenseEntity`）
+    - `CategoryHistoryDao`、`PendingExpensesDao` の実装
+    - _Requirements: 4.4, 5.1_
+  - [x] 3.2 CategoryHistoryRepositoryの実装
+    - Room DAOを使用した前方一致検索（searchByPrefix）と保存（save）
+    - _Requirements: 4.1, 4.4_
+  - [ ]* 3.3 Property 3: カテゴリ前方一致検索の正確性のプロパティテスト
+    - ==Property 3: カテゴリ前方一致検索の正確性==
+    - Arb.list(Arb.string())とArb.string()でデータを生成し、suggest()の結果がプレフィックスに前方一致することを検証
+    - **Validates: Requirements 4.1**
+  - [ ]* 3.4 Property 4: カテゴリ履歴のラウンドトリップのプロパティテスト
+    - ==Property 4: カテゴリ履歴のラウンドトリップ==
+    - Arb.string()でカテゴリを生成し、save→searchByPrefixの往復を検証
+    - **Validates: Requirements 4.4**
+  - [x] 3.5 PendingExpenseRepositoryの実装
+    - Room DAOを使用した一時保存経費のCRUD操作
+    - _Requirements: 5.3, 5.5, 5.6_
+  - [x] 3.6 SettingsRepositoryの実装（DataStore）
+    - DataStore Preferencesを使用したフォルダID、スプレッドシートID、認証状態、お小遣い額の保存・取得
+    - _Requirements: 7.1, 14.1_
+  - [ ]* 3.7 Property 16: お小遣い設定のラウンドトリップのプロパティテスト
+    - ==Property 16: お小遣い設定のラウンドトリップ==
+    - Arb.int().orNull()でお小遣い額を生成し、save-getの往復を検証
+    - **Validates: Requirements 14.1**
+  - [x] 3.8 GoogleDriveRepositoryの実装
+    - Google Drive API v3を使用したフォルダ検索・作成、スプレッドシート検索
+    - _Requirements: 8.1, 8.2, 8.3, 9.1, 9.6_
+  - [x] 3.9 GoogleSheetsRepositoryの実装
+    - Google Sheets API v4を使用した経費追記、行削除、スプレッドシート作成（まとめシート + 12ヶ月シート + ヘッダー行 + SUM関数）
+    - 合計額取得（fetchYearlyTotal、fetchMonthlyTotal）
+    - _Requirements: 5.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 12.4, 13.2_
+  - [x] 3.10 Checkpoint - データ層の検証
+    - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 4. ドメインサービスの実装
+  - [x] 4.1 CategorySuggestionEngineの実装
+    - CategoryHistoryRepositoryを使用した前方一致検索とカテゴリ記録
+    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+  - [x] 4.2 SpreadsheetResolverの実装
+    - 日付に基づくスプレッドシートID・シート名の解決
+    - SpendMgrフォルダの存在確認・自動作成（ensureFolder）
+    - 年別スプレッドシートの存在確認・自動作成
+    - 現在の年のスプレッドシートURL取得（getCurrentYearSpreadsheetUrl）
+    - _Requirements: 5.1, 8.1, 8.2, 8.3, 9.1, 9.2, 9.6, 11.2_
+  - [ ]* 4.3 Property 6: SpreadsheetResolverのシート名解決のプロパティテスト
+    - ==Property 6: SpreadsheetResolverのシート名解決==
+    - Arb.localDate()で日付を生成し、sheetNameが「M月」形式であることを検証
+    - **Validates: Requirements 5.1, 9.1**
+  - [ ]* 4.4 Property 7: フォルダ・スプレッドシートの冪等性のプロパティテスト
+    - ==Property 7: フォルダ・スプレッドシートの冪等性==
+    - Arb.string()でフォルダ名を生成し、ensureFolder()の複数回呼び出しで同一IDが返ることを検証
+    - **Validates: Requirements 8.3, 9.6**
+  - [ ]* 4.5 Property 9: スプレッドシートURL生成の正確性のプロパティテスト
+    - ==Property 9: スプレッドシートURL生成の正確性==
+    - Arb.string()でスプレッドシートIDを生成し、URL形式を検証
+    - **Validates: Requirements 11.2, 11.4**
+  - [x] 4.6 SummaryFetcherの実装
+    - Summary_Sheet / Monthly_Sheetから合計額を取得しSummaryCacheに保存
+    - 認証未完了・スプレッドシート未存在・ネットワークエラー時はnullを返す
+    - _Requirements: 13.1, 13.2, 13.5, 13.6, 13.7, 13.8, 13.9_
+  - [ ]* 4.7 Property 12: 合計額取得のフォールバックのプロパティテスト
+    - ==Property 12: 合計額取得のフォールバック==
+    - Arb.boolean()で認証状態・存在状態・ネットワーク状態を生成し、fetchSummary()の戻り値を検証
+    - **Validates: Requirements 13.7, 13.8, 13.9**
+  - [x] 4.8 Checkpoint - ドメインサービスの検証
+    - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 5. Hilt DIモジュールの設定
+  - `AppModule`: Room Database、DataStore、Repository、ドメインサービスのプロバイダ
+  - `NetworkModule`: Google Sheets API / Google Drive APIクライアントのプロバイダ
+  - `Application` クラスに `@HiltAndroidApp` アノテーション
+  - _Requirements: 1.1_
+
+- [x] 6. Google OAuth認証の実装
+  - Google Cloud Console設定ガイドとOAuth認証フローの実装
+  - Credential Managerを使用したGoogle Sign-In
+  - OAuth認証スコープ: Google Drive API（ファイル作成・管理）+ Google Sheets API（読み書き）
+  - 認証トークンの取得・保存
+  - Google Cloud ConsoleでのOAuthクライアントID設定手順をコード内コメントに記載
+  - _Requirements: 7.1, 7.2, 7.3_
+
+- [x] 7. ExpenseViewModelの実装
+  - [x] 7.1 ExpenseViewModelのコア機能実装
+    - `ExpenseUiState` のStateFlow管理
+    - `onAmountChange`: 金額入力処理（数字フィルタリング + フォーマット表示）
+    - `onDateChange`: 日付変更処理
+    - `onCategoryChange`: カテゴリ入力処理（補完トリガー）
+    - `onSuggestionSelect`: カテゴリ候補選択処理
+    - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.3, 4.1, 4.2_
+  - [x] 7.2 記録フローの実装
+    - `onRecordClick`: バリデーション → ローカル保存 → スプレッドシート追記 → 成功時（ローカル削除・入力クリア・Undo Snackbar表示・キャッシュ加算）/ 失敗時（エラー表示）
+    - 起動時の未送信データ再送処理の統合
+    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.1, 6.2_
+  - [x] 7.3 Undo機能の実装
+    - `onUndoClick`: UndoTarget情報を使用してスプレッドシートから行削除 + キャッシュ減算
+    - `onSnackbarDismiss`: UndoTarget情報のクリア
+    - 5秒タイマーによる自動dismiss
+    - _Requirements: 12.1, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9_
+  - [ ]* 7.4 Property 10: Undo Snackbarの状態遷移のプロパティテスト
+    - ==Property 10: Undo Snackbarの状態遷移==
+    - 記録成功後のshowUndoSnackbar/undoTarget/undoExpenseLabelの状態、undo/dismiss後の状態遷移を検証
+    - **Validates: Requirements 12.1, 12.3, 12.6, 12.7, 12.8**
+  - [ ]* 7.5 Property 18: Undo Snackbar記録内容表示フォーマットのプロパティテスト
+    - ==Property 18: Undo Snackbarの記録内容表示フォーマット==
+    - Arb.localDate()、Arb.int()、Arb.string()でExpenseRecordを生成し、undoExpenseLabelのフォーマットを検証
+    - **Validates: Requirements 12.3**
+  - [x] 7.6 合計額表示・リフレッシュの実装
+    - `refreshSummary` / `onPullToRefresh`: スプレッドシートから合計額を再取得
+    - 起動時の合計額フェッチ
+    - 合計額表示のフォーマット（nullは「—」、非nullは「¥(カンマ区切り)」）
+    - _Requirements: 13.1, 13.3, 13.4, 13.5, 13.6, 13.7, 13.8, 13.9_
+  - [ ]* 7.7 Property 13: 合計額表示の整合性のプロパティテスト
+    - ==Property 13: 合計額表示の整合性==
+    - Arb.int().orNull()でyearlyTotal/monthlyTotalを生成し、null時は「—」、非null時はフォーマット済み金額文字列を検証
+    - **Validates: Requirements 13.1, 13.7**
+  - [x] 7.8 お小遣い設定・残額トグルの実装
+    - `onSettingsIconClick` / `onAllowanceDialogDismiss`: ダイアログ表示制御
+    - `onAllowanceChange`: お小遣い額の保存
+    - `onSummaryAreaClick`: 通常表示⇔残額表示のトグル切り替え
+    - 残額計算: 今月 = Allowance_Amount − monthlyTotal、今年 = Allowance_Amount × 12 − yearlyTotal
+    - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 15.2_
+  - [ ]* 7.9 Property 14: お小遣い残額計算の正確性のプロパティテスト
+    - ==Property 14: お小遣い残額計算の正確性==
+    - Arb.positiveInt()でAllowance_Amount、Arb.int()で合計額を生成し、残額計算を検証
+    - **Validates: Requirements 14.4, 14.5**
+  - [ ]* 7.10 Property 15: 合計額表示トグルの状態遷移のプロパティテスト
+    - ==Property 15: 合計額表示トグルの動作規則==
+    - Arb.int().orNull()でAllowance_Amount、タップ回数を生成し、トグル状態遷移を検証
+    - **Validates: Requirements 14.2, 14.6**
+  - [x] 7.11 スプレッドシート遷移の実装
+    - `onOpenSpreadsheetClick`: 認証チェック → スプレッドシートURL取得 → ブラウザで開く
+    - 未認証時・スプレッドシート未存在時のメッセージ表示
+    - `onSignIn`: 認証フロー開始
+    - _Requirements: 11.1, 11.2, 11.3, 11.4, 7.2_
+  - [x] 7.12 Checkpoint - ViewModelの検証
+    - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 8. UI層の実装（Jetpack Compose）
+  - [x] 8.1 AmountInputTextFieldの実装
+    - OS標準の数値キーボード（keyboardType = KeyboardType.Number）
+    - 起動時の自動フォーカス（FocusRequester）
+    - 「¥」付き表示切り替え実装
+    - IMEアクションNext → CategoryInputにフォーカス移動
+    - _Requirements: 2.1, 2.2, 2.4, 2.5, 2.6_
+  - [x] 8.2 DatePickerの実装
+    - 本日の日付をM/d形式でデフォルト表示
+    - タップでMaterial 3 DatePickerDialogを表示
+    - 日付選択後にM/d形式で反映
+    - _Requirements: 3.1, 3.2, 3.3_
+  - [x] 8.3 CategoryInputの実装
+    - テキスト入力フィールド（keyboardType = KeyboardType.Text、imeAction = ImeAction.Done）
+    - 入力に応じた候補リスト表示（前方一致）
+    - 候補選択時のフィールド反映
+    - 候補なしのリスト非表示
+    - _Requirements: 4.1, 4.2, 4.3, 4.5, 4.6_
+  - [x] 8.4 ExpenseSummaryAreaの実装
+    - 今年の合計・今月の合計額の表示
+    - ローディング表示、「—」プレースホルダー
+    - お小遣い設定時のタップトグル（通常表示⇔残額表示）
+    - 通常表示:「今年: ¥(合計額)」「今月: ¥(合計額)」
+    - 残額表示:「今年: ¥(お小遣い − 合計額)」「今月: ¥(お小遣い − 合計額)」
+    - _Requirements: 13.1, 14.2, 14.3, 14.4, 14.5, 14.6_
+  - [x] 8.5 UndoSnackbarの実装
+    - Material 3 Snackbarコンポーネント
+    - 記録内容表示（「{M/d} ¥{金額}（{カテゴリ}）」形式）
+    - 「取り消し」ボタン
+    - 5秒後の自動消去
+    - Record_Button / Open_Spreadsheet_Button / Amount_Inputに重ならない配置
+    - _Requirements: 12.1, 12.2, 12.3, 12.6_
+  - [x] 8.6 AllowanceDialogの実装
+    - 現在の設定値を読み取り専用で表示（初期状態）
+    - 「編集」ボタンで編集可能に切り替え + 数値キーボード表示
+    - 「決定」で保存・ダイアログ閉じる
+    - 金額空で「決定」→ null保存（お小遣い無制限）
+    - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6_
+  - [x] 8.7 ExpenseEntryScreenの組み立て
+    - 全UIコンポーネントの配置・接続
+    - Settings_Icon（右上ギアアイコン）の配置
+    - Record_Button / Open_Spreadsheet_Buttonの配置
+    - プルトゥリフレッシュ（SwipeRefresh）の実装
+    - Scaffold + SnackbarHostの構成
+    - _Requirements: 1.1, 1.2, 11.1, 13.5, 15.1_
+  - [x] 8.8 MainActivityの実装
+    - `@AndroidEntryPoint` アノテーション
+    - ExpenseEntryScreenの表示
+    - _Requirements: 1.1_
+  - [x] 8.9 Checkpoint - UI層の検証
+    - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 9. 統合とワイヤリング
+  - [x] 9.1 エンドツーエンドフローの統合
+    - 全コンポーネントの接続確認
+    - 起動 → 認証 → フォルダ/スプレッドシート自動作成 → 経費記録 → Undo → 合計額更新の一連のフロー
+    - 起動時の未送信データ再送処理の統合
+    - _Requirements: 1.1, 5.1, 5.2, 5.5, 7.1, 8.1, 9.1_
+  - [ ]* 9.2 Property 8: 年別スプレッドシートのシート構成のプロパティテスト
+    - ==Property 8: 年別スプレッドシートのシート構成==
+    - Arb.int(2025..2099)で年を生成し、まとめシート + 12ヶ月シート + ヘッダー行 + SUM関数の構成を検証
+    - **Validates: Requirements 9.3, 9.4, 9.5, 10.1, 10.2**
+  - [ ]* 9.3 Property 11: 取り消し操作のラウンドトリップのプロパティテスト
+    - ==Property 11: 取り消し操作のラウンドトリップ==
+    - Arb.int()で金額を生成し、appendExpense→deleteRowの往復を検証
+    - **Validates: Requirements 12.4, 12.5**
+  - [ ]* 9.4 統合テスト
+    - GoogleSheetsRepository: モックサーバーを使用したAPI呼び出しの検証
+    - GoogleDriveRepository: モックサーバーを使用したフォルダ・ファイル操作の検証
+    - OAuth認証フロー: 認証トークンの取得・保存の検証
+    - _Requirements: 5.1, 7.1, 8.1, 8.2, 9.1, 9.2_
+
+- [x] 10. Final checkpoint - 全テスト実行と最終確認
+  - Ensure all tests pass, ask the user if questions arise.
+
+## Notes
+
+- タスクに `*` が付いているものはオプションで、MVP実装時にはスキップ可能
+- 各タスクは対応する要件番号を参照しており、トレーサビリティを確保
+- チェックポイントはインクリメンタルに検証を実施
+- プロパティテストは設計ドキュメントのCorrectness Propertiesに基づく
+- ユニットテストは具体的な例とエッジケースを検証
+- Google Cloud ConsoleでのOAuthクライアントID設定は手動作業が必要（タスク9.1のコメントに手順を記載）
+- Galaxy S24実機でのテストはUSB接続またはAPKインストールで実施（自動テスト対象外）

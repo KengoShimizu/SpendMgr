@@ -1,0 +1,22 @@
+# --- Android / IntelliJ / Gradle ---
+.gradle/
+/build/
+**/build/
+*.iml
+.idea/
+local.properties
+.kotlin/
+
+# --- Device / Capture ---
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# --- Editor / IDE ---
+.vscode/
+.DS_Store
+*.swp
+
+# --- AI (Kiro) & Documents ---
+.kiro/*
+!.kiro/specs/

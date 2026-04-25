@@ -1,0 +1,10 @@
+<resources>
+    <!--
+        Jetpack Compose + Material 3 のみを使用するため、
+        Androidビュー側のテーマは軽量な Theme.AppCompat.Light.NoActionBar をベースにする。
+        Compose側のテーマは MaterialTheme コンポーザブルで管理する。
+    -->
+    <style name="Theme.SpendMgr" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/md_theme_primary</item>
+    </style>
+</resources>
