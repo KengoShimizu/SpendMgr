@@ -47,6 +47,9 @@ interface GoogleSheetsRepository {
 
     /**
      * まとめシートから今年の合計額を取得する。
+     * 各月シートの金額（B列）を割り勘人数（E列）で割った値の合計を直接計算する。
+     * まとめシートのSUM式は旧データとの互換性のため参照しない。
+     * E列が空の旧データは割り勘人数1として扱う。
      * @return 今年の合計額（円）。取得失敗時はnull
      */
     suspend fun fetchYearlyTotal(
@@ -87,4 +90,18 @@ interface GoogleSheetsRepository {
         spreadsheetId: String,
         sheetName: String
     ): Result<Int?>
+
+    /**
+     * 指定シートから日付・金額・割り勘人数の生データを取得する。
+     * 給料日サイクル集計（25日〜翌月24日）に使用する。
+     * ヘッダー行（1行目）は除外される。
+     *
+     * @param spreadsheetId スプレッドシートID
+     * @param sheetName シート名（例: "4月"）
+     * @return Triple(日付文字列 "M/d", 金額, 割り勘人数) のリスト
+     */
+    suspend fun fetchRawExpenses(
+        spreadsheetId: String,
+        sheetName: String
+    ): Result<List<Triple<String, Int, Int>>>
 }

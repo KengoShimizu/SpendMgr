@@ -10,5 +10,6 @@ data class PendingExpenseEntity(
     val date: String,           // "yyyy-MM-dd" 形式
     val category: String,
     val isCreditCard: Boolean = true,
+    val splitCount: Int = 1,    // 割り勘人数
     val createdAt: Long = System.currentTimeMillis()
 )

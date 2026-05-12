@@ -66,6 +66,7 @@
   - [x] 3.1 Room Databaseのセットアップ
     - `SpendMgrDatabase` の定義（`CategoryHistoryEntity`、`PendingExpenseEntity`）
     - `CategoryHistoryDao`、`PendingExpensesDao` の実装
+    - DBマイグレーション: version 1→2（isCreditCard追加）、version 2→3（splitCount追加）
     - _Requirements: 4.4, 5.1_
   - [x] 3.2 CategoryHistoryRepositoryの実装
     - Room DAOを使用した前方一致検索（searchByPrefix）と保存（save）
@@ -92,9 +93,13 @@
     - Google Drive API v3を使用したフォルダ検索・作成、スプレッドシート検索
     - _Requirements: 8.1, 8.2, 8.3, 9.1, 9.6_
   - [x] 3.9 GoogleSheetsRepositoryの実装
-    - Google Sheets API v4を使用した経費追記、行削除、スプレッドシート作成（まとめシート + 12ヶ月シート + ヘッダー行 + SUM関数）
+    - Google Sheets API v4を使用した経費追記（A〜E列）、行削除、スプレッドシート作成（まとめシート + 12ヶ月シート + ヘッダー行 + SUMPRODUCT関数）
     - 合計額取得（fetchYearlyTotal、fetchMonthlyTotal）
-    - _Requirements: 5.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 12.4, 13.2_
+    - fetchYearlyTotal: まとめシートは参照せず各月シートのB列÷E列を直接集計（旧データ互換）
+    - 割り勘対応: fetchCategoryAmounts・fetchMonthlyTotal は金額÷割り勘人数で集計
+    - 家計立替: fetchCreditCardTotal は割り勘前の金額（B列）を合計
+    - 給料日サイクル集計用: fetchRawExpenses（日付・金額・割り勘人数の生データ取得）
+    - _Requirements: 2b.3, 2b.4, 2b.6, 5.1, 9.2, 9.3, 9.4, 9.5, 10.1, 10.2, 12.4, 13.1, 13.2_
   - [x] 3.10 Checkpoint - データ層の検証
     - Ensure all tests pass, ask the user if questions arise.
 
@@ -123,7 +128,9 @@
   - [x] 4.6 SummaryFetcherの実装
     - Summary_Sheet / Monthly_Sheetから合計額を取得しSummaryCacheに保存
     - 認証未完了・スプレッドシート未存在・ネットワークエラー時はnullを返す
-    - _Requirements: 13.1, 13.2, 13.5, 13.6, 13.7, 13.8, 13.9_
+    - 今月の合計は給料日サイクル（Salary_Cycle）ベースで集計: fetchRawExpenses で日付フィルタリング
+    - 年をまたぐサイクル（12月25日〜1月24日）は前年スプレッドシートの12月分も参照
+    - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5, 13.6, 13.7, 13.8, 13.9_
   - [ ]* 4.7 Property 12: 合計額取得のフォールバックのプロパティテスト
     - ==Property 12: 合計額取得のフォールバック==
     - Arb.boolean()で認証状態・存在状態・ネットワーク状態を生成し、fetchSummary()の戻り値を検証
@@ -154,14 +161,17 @@
     - `onSuggestionSelect`: カテゴリ候補選択処理
     - _Requirements: 2.1, 2.2, 2.3, 3.1, 3.3, 4.1, 4.2_
   - [x] 7.2 記録フローの実装
-    - `onRecordClick`: バリデーション → ローカル保存 → スプレッドシート追記 → 成功時（ローカル削除・入力クリア・Undo Snackbar表示・キャッシュ加算）/ 失敗時（エラー表示）
+    - `onRecordClick`: バリデーション → ローカル保存 → スプレッドシート追記（A〜E列）→ 成功時（ローカル削除・入力クリア・Undo Snackbar表示・キャッシュ加算）/ 失敗時（エラー表示）
+    - キャッシュ加算: 割り勘後の金額（amount / splitCount）を使用
+    - 月次キャッシュ更新: 給料日サイクル（isInCurrentSalaryCycle）内の場合のみ monthlyTotal を更新
     - 起動時の未送信データ再送処理の統合
-    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.1, 6.2_
+    - _Requirements: 2b.3, 2b.4, 2b.5, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.1, 6.2, 13.3_
   - [x] 7.3 Undo機能の実装
-    - `onUndoClick`: UndoTarget情報を使用してスプレッドシートから行削除 + キャッシュ減算
+    - `onUndoClick`: UndoTarget情報を使用してスプレッドシートから行削除 + キャッシュ減算（割り勘後の金額）
+    - キャッシュ減算: 給料日サイクル（isInCurrentSalaryCycle）内の場合のみ monthlyTotal を減算
     - `onSnackbarDismiss`: UndoTarget情報のクリア
     - 5秒タイマーによる自動dismiss
-    - _Requirements: 12.1, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9_
+    - _Requirements: 12.1, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 13.4_
   - [ ]* 7.4 Property 10: Undo Snackbarの状態遷移のプロパティテスト
     - ==Property 10: Undo Snackbarの状態遷移==
     - 記録成功後のshowUndoSnackbar/undoTarget/undoExpenseLabelの状態、undo/dismiss後の状態遷移を検証

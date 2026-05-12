@@ -11,6 +11,7 @@ data class ExpenseUiState(
     val date: LocalDate = LocalDate.now(),
     val category: String = "",
     val isCreditCard: Boolean = true,   // クレジットカード払いか否か（デフォルト: カード払い）
+    val splitCount: Int = 1,            // 割り勘人数（デフォルト: 1人）
     val suggestions: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val isAuthenticated: Boolean = false,

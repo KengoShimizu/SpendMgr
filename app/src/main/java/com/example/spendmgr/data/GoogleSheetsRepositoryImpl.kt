@@ -39,11 +39,13 @@ class GoogleSheetsRepositoryImpl(
             val dateFormatted = expense.date.format(dateFormatter)
             // D列: TRUE/FALSE（スプレッドシート上でチェックボックスとして表示）
             val creditCardValue = expense.isCreditCard
+            // E列: 割り勘人数
+            val splitCount = expense.splitCount
             val values = listOf(
-                listOf(dateFormatted, expense.amount, expense.category, creditCardValue)
+                listOf(dateFormatted, expense.amount, expense.category, creditCardValue, splitCount)
             )
             val body = ValueRange().setValues(values)
-            val range = "${sheetName}!A:D"
+            val range = "${sheetName}!A:E"
 
             val response = sheetsService.spreadsheets().values()
                 .append(spreadsheetId, range, body)
@@ -197,11 +199,11 @@ class GoogleSheetsRepositoryImpl(
 
             val spreadsheetId = created.spreadsheetId
 
-            // 各月シートにヘッダー行を設定（D列: カード払い を追加）
-            val headerValues = listOf(listOf("日付", "金額", "カテゴリ", "カード払い"))
+            // 各月シートにヘッダー行を設定（E列: 割り勘人数 を追加）
+            val headerValues = listOf(listOf("日付", "金額", "カテゴリ", "カード払い", "割り勘人数"))
             val valueRanges = monthSheetNames.map { monthName ->
                 ValueRange()
-                    .setRange("${monthName}!A1:D1")
+                    .setRange("${monthName}!A1:E1")
                     .setValues(headerValues)
             }
 
@@ -265,8 +267,9 @@ class GoogleSheetsRepositoryImpl(
 
             // 各月の行（1月〜12月）
             monthSheetNames.forEach { monthName ->
-                // ヘッダー行（B1）を除いた B2:B 範囲を SUM
-                val sumFormula = "=SUM('${monthName}'!B2:B)"
+                // E列が存在しない旧データは splitCount=1 として扱うため IFERROR で保護
+                // =SUMPRODUCT(B2:B / IF(E2:E="", 1, IFERROR(E2:E, 1)))
+                val sumFormula = "=SUMPRODUCT(IF('${monthName}'!B2:B=\"\",0,'${monthName}'!B2:B/IF('${monthName}'!E2:E=\"\",1,IFERROR(VALUE('${monthName}'!E2:E),1))))"
                 summaryData.add(listOf(monthName, sumFormula))
             }
 
@@ -291,21 +294,22 @@ class GoogleSheetsRepositoryImpl(
         spreadsheetId: String
     ): Result<Int?> = withContext(Dispatchers.IO) {
         runCatching {
-            val response = sheetsService.spreadsheets().values()
-                .get(spreadsheetId, "まとめ!B2:B13")
-                .execute()
-
-            val values = response.getValues()
-            if (values.isNullOrEmpty()) return@runCatching null
-
+            // まとめシートのSUM式は旧データ（割り勘前）の可能性があるため、
+            // 各月シートから直接 B列・E列を取得して割り勘後の金額を合計する
             var total = 0
-            for (row in values) {
-                if (row.isNotEmpty()) {
-                    val cellValue = row[0]?.toString()
-                    val amount = cellValue?.toDoubleOrNull()?.toInt()
-                    if (amount != null) {
-                        total += amount
-                    }
+            for (month in 1..12) {
+                val sheetName = "${month}月"
+                val response = sheetsService.spreadsheets().values()
+                    .get(spreadsheetId, "${sheetName}!B2:E")
+                    .execute()
+                val values = response.getValues() ?: continue
+                for (row in values) {
+                    if (row.isEmpty()) continue
+                    val amount = row[0]?.toString()?.toDoubleOrNull()?.toInt() ?: continue
+                    val splitCount = if (row.size >= 4) {
+                        row[3]?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                    } else 1
+                    total += amount / splitCount
                 }
             }
             total
@@ -317,9 +321,9 @@ class GoogleSheetsRepositoryImpl(
         sheetName: String
     ): Result<Int?> = withContext(Dispatchers.IO) {
         runCatching {
-            // B2:B でヘッダー行（B1）をスキップして金額列を取得
+            // B2:E でヘッダー行（B1）をスキップして金額列（B）と割り勘人数列（E）を取得
             val response = sheetsService.spreadsheets().values()
-                .get(spreadsheetId, "${sheetName}!B2:B")
+                .get(spreadsheetId, "${sheetName}!B2:E")
                 .execute()
 
             val values = response.getValues()
@@ -327,13 +331,14 @@ class GoogleSheetsRepositoryImpl(
 
             var total = 0
             for (row in values) {
-                if (row.isNotEmpty()) {
-                    val cellValue = row[0]?.toString()
-                    val amount = cellValue?.toDoubleOrNull()?.toInt()
-                    if (amount != null) {
-                        total += amount
-                    }
-                }
+                if (row.isEmpty()) continue
+                val cellValue = row[0]?.toString()
+                val amount = cellValue?.toDoubleOrNull()?.toInt() ?: continue
+                // E列（index 3）: 割り勘人数。存在しない旧データは 1 として扱う
+                val splitCount = if (row.size >= 4) {
+                    row[3]?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                } else 1
+                total += amount / splitCount
             }
             total
         }
@@ -344,9 +349,9 @@ class GoogleSheetsRepositoryImpl(
         sheetName: String
     ): Result<List<Pair<String, Int>>> = withContext(Dispatchers.IO) {
         runCatching {
-            // B2:C でヘッダー行（1行目）をスキップして金額列（B）とカテゴリ列（C）を取得
+            // B2:E でヘッダー行（1行目）をスキップして金額列（B）、カテゴリ列（C）、割り勘人数列（E）を取得
             val response = sheetsService.spreadsheets().values()
-                .get(spreadsheetId, "${sheetName}!B2:C")
+                .get(spreadsheetId, "${sheetName}!B2:E")
                 .execute()
 
             val values = response.getValues()
@@ -354,7 +359,7 @@ class GoogleSheetsRepositoryImpl(
 
             val result = mutableListOf<Pair<String, Int>>()
             for (row in values) {
-                // B列（index 0）: 金額、C列（index 1）: カテゴリ
+                // B列（index 0）: 金額、C列（index 1）: カテゴリ、E列（index 3）: 割り勘人数
                 if (row.size < 2) continue
                 val amountStr = row[0]?.toString()
                 val category = row[1]?.toString()
@@ -362,7 +367,10 @@ class GoogleSheetsRepositoryImpl(
                 if (amountStr.isNullOrBlank() || category.isNullOrBlank()) continue
 
                 val amount = amountStr.toDoubleOrNull()?.toInt() ?: continue
-                result.add(Pair(category, amount))
+                val splitCount = if (row.size >= 4) {
+                    row[3]?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                } else 1
+                result.add(Pair(category, amount / splitCount))
             }
             result
         }
@@ -374,6 +382,7 @@ class GoogleSheetsRepositoryImpl(
     ): Result<Int?> = withContext(Dispatchers.IO) {
         runCatching {
             // B2:D でヘッダー行をスキップして金額列（B）とカード払い列（D）を取得
+            // 家計立替は割り勘前の金額を使用するため E列（割り勘人数）は参照しない
             val response = sheetsService.spreadsheets().values()
                 .get(spreadsheetId, "${sheetName}!B2:D")
                 .execute()
@@ -398,6 +407,34 @@ class GoogleSheetsRepositoryImpl(
                 }
             }
             total
+        }
+    }
+
+    override suspend fun fetchRawExpenses(
+        spreadsheetId: String,
+        sheetName: String
+    ): Result<List<Triple<String, Int, Int>>> = withContext(Dispatchers.IO) {
+        runCatching {
+            // A2:E でヘッダー行をスキップして日付（A）、金額（B）、割り勘人数（E）を取得
+            val response = sheetsService.spreadsheets().values()
+                .get(spreadsheetId, "${sheetName}!A2:E")
+                .execute()
+
+            val values = response.getValues()
+            if (values.isNullOrEmpty()) return@runCatching emptyList()
+
+            val result = mutableListOf<Triple<String, Int, Int>>()
+            for (row in values) {
+                if (row.size < 2) continue
+                val dateStr = row[0]?.toString() ?: continue
+                val amountStr = row[1]?.toString() ?: continue
+                val amount = amountStr.toDoubleOrNull()?.toInt() ?: continue
+                val splitCount = if (row.size >= 5) {
+                    row[4]?.toString()?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                } else 1
+                result.add(Triple(dateStr, amount, splitCount))
+            }
+            result
         }
     }
 }

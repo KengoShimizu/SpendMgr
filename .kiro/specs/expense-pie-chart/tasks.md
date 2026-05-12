@@ -227,21 +227,24 @@
   - `isAuthenticated` と `hasSpreadsheet`（`uiState.spreadsheetUrl != null`）を `PieChartArea` に渡す
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [x] 12. クレジットカード払いフラグ機能の追加
-  - [x] 12.1 ExpenseRecord に `isCreditCard: Boolean = true` フィールドを追加する
-  - [x] 12.2 PendingExpenseEntity に `isCreditCard` カラムを追加し、DB マイグレーション（version 2）を実施する
-  - [x] 12.3 GoogleSheetsRepositoryImpl の `appendExpense()` でD列に `TRUE`/`FALSE` を書き込む
-  - [x] 12.4 GoogleSheetsRepositoryImpl の `createYearlySpreadsheet()` でD列ヘッダーとチェックボックス入力規則を設定する
-  - [x] 12.5 GoogleSheetsRepository に `fetchCreditCardTotal()` を追加し実装する
+- [x] 12. クレジットカード払いフラグ・割り勘機能の追加
+  - [x] 12.1 ExpenseRecord に `isCreditCard: Boolean = true`、`splitCount: Int = 1` フィールドを追加する
+  - [x] 12.2 PendingExpenseEntity に `isCreditCard`（version 2）、`splitCount`（version 3）カラムを追加し、DBマイグレーションを実施する
+  - [x] 12.3 GoogleSheetsRepositoryImpl の `appendExpense()` でD列に `TRUE`/`FALSE`、E列に割り勘人数を書き込む
+  - [x] 12.4 GoogleSheetsRepositoryImpl の `createYearlySpreadsheet()` でD列・E列ヘッダーとチェックボックス入力規則を設定する
+  - [x] 12.5 GoogleSheetsRepository に `fetchCreditCardTotal()`（割り勘前の金額を合計）を追加し実装する
   - [x] 12.6 SettingsRepository / SettingsRepositoryImpl にカード払い合計キャッシュメソッドを追加する
   - [x] 12.7 PieChartData に `creditCardTotal: Int?` フィールドを追加し、JSON シリアライズ/デシリアライズに対応する
   - [x] 12.8 PieChartFetcher で `fetchCreditCardTotalForPeriod()` を実装し、`PieChartData` に含める
   - [x] 12.9 PieChartCache の `addExpense()`・`removeExpense()` に `isCreditCard` パラメータを追加し `creditCardTotal` を更新する
-  - [x] 12.10 ExpenseUiState に `isCreditCard: Boolean = true` を追加する
-  - [x] 12.11 ExpenseViewModel に `onCreditCardChange()` を追加し、`onRecordClick()` で `isCreditCard` を `ExpenseRecord` に渡す
-  - [x] 12.12 ExpenseEntryScreen にチェックボックス UI を追加する（カテゴリ入力の下、記録ボタンの上）
+  - [x] 12.10 ExpenseUiState に `isCreditCard: Boolean = true`、`splitCount: Int = 1` を追加する
+  - [x] 12.11 ExpenseViewModel に `onCreditCardChange()`・`onSplitCountChange()` を追加し、`onRecordClick()` で両フィールドを `ExpenseRecord` に渡す
+  - [x] 12.12 ExpenseEntryScreen にチェックボックス UI（カテゴリ入力の下）と割り勘人数プルダウン（チェックボックスの下）を追加する
   - [x] 12.13 PieChartArea に家計立替表示を追加する（期間セレクタと同じ行の右側）
-  - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7_
+  - [x] 12.14 GoogleSheetsRepositoryImpl の `fetchCategoryAmounts()` で金額を割り勘人数（E列）で割って返す
+  - [x] 12.15 GoogleSheetsRepositoryImpl の `setupSummarySheet()` でSUMPRODUCT関数（割り勘対応）を設定する
+  - [x] 12.16 GoogleSheetsRepository に `fetchRawExpenses()` を追加し実装する（給料日サイクル集計用）
+  - _Requirements: 2b.1〜2b.6, 8.1〜8.5, 9.1〜9.7, 10.1〜10.3_
 
 - [x] 11. 最終チェックポイント - すべてのテストがパスすることを確認する
   - Ensure all tests pass, ask the user if questions arise.

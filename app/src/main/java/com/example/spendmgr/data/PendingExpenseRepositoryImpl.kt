@@ -15,7 +15,8 @@ class PendingExpenseRepositoryImpl(
             amount = expense.amount,
             date = expense.date.toString(),  // LocalDate.toString() → "yyyy-MM-dd"
             category = expense.category,
-            isCreditCard = expense.isCreditCard
+            isCreditCard = expense.isCreditCard,
+            splitCount = expense.splitCount
         )
         return dao.save(entity)
     }
@@ -27,7 +28,8 @@ class PendingExpenseRepositoryImpl(
                 amount = entity.amount,
                 date = LocalDate.parse(entity.date),  // "yyyy-MM-dd" → LocalDate
                 category = entity.category,
-                isCreditCard = entity.isCreditCard
+                isCreditCard = entity.isCreditCard,
+                splitCount = entity.splitCount
             )
         }
     }

@@ -17,9 +17,13 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -29,7 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -66,6 +72,9 @@ fun ExpenseEntryScreen(
 
     // Undo Snackbar 用の SnackbarHostState
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // 割り勘プルダウンの展開状態
+    var splitDropdownExpanded by remember { mutableStateOf(false) }
 
     // スプレッドシート URL が設定されたらSheetsアプリ優先で開く (Req 11.2)
     LaunchedEffect(uiState.spreadsheetUrl) {
@@ -238,6 +247,38 @@ fun ExpenseEntryScreen(
                         text = "クレジットカード払い（家計立替）",
                         style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
                     )
+                }
+
+                // 割り勘人数プルダウン
+                ExposedDropdownMenuBox(
+                    expanded = splitDropdownExpanded,
+                    onExpandedChange = { splitDropdownExpanded = it },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = "${uiState.splitCount}人",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("割り勘人数") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = splitDropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = splitDropdownExpanded,
+                        onDismissRequest = { splitDropdownExpanded = false }
+                    ) {
+                        (1..10).forEach { count ->
+                            DropdownMenuItem(
+                                text = { Text("${count}人") },
+                                onClick = {
+                                    viewModel.onSplitCountChange(count)
+                                    splitDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
                 }
 
                 // Record_Button (Req 5.1)

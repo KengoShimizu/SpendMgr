@@ -135,6 +135,13 @@ class ExpenseViewModel @Inject constructor(
     }
 
     /**
+     * Called when the user selects a split count from the dropdown.
+     */
+    fun onSplitCountChange(splitCount: Int) {
+        _uiState.update { it.copy(splitCount = splitCount) }
+    }
+
+    /**
      * Called when the user types in the category field.
      * Triggers suggestion lookup.
      */
@@ -194,7 +201,8 @@ class ExpenseViewModel @Inject constructor(
             amount = amountInt,
             date = state.date,
             category = state.category,
-            isCreditCard = state.isCreditCard
+            isCreditCard = state.isCreditCard,
+            splitCount = state.splitCount
         )
 
         viewModelScope.launch {
@@ -240,9 +248,10 @@ class ExpenseViewModel @Inject constructor(
                     // Update summary cache (今月・今年のデータのみ)
                     val today = LocalDate.now()
                     val isThisYear = expense.date.year == today.year
-                    val isThisMonth = isThisYear && expense.date.monthValue == today.monthValue
+                    val isInSalaryCycle = isThisYear && isInCurrentSalaryCycle(expense.date, today)
+                    val splitAmount = expense.amount / expense.splitCount
                     if (isThisYear) {
-                        summaryCache.adjust(expense.amount, adjustYearly = true, adjustMonthly = isThisMonth)
+                        summaryCache.adjust(splitAmount, adjustYearly = true, adjustMonthly = isInSalaryCycle)
                     }
 
                     // Update pie chart cache
@@ -256,6 +265,7 @@ class ExpenseViewModel @Inject constructor(
                             amountText = "",
                             category = "",
                             isCreditCard = true,
+                            splitCount = 1,
                             date = LocalDate.now(),
                             suggestions = emptyList(),
                             error = null,
@@ -330,9 +340,10 @@ class ExpenseViewModel @Inject constructor(
                     // Adjust summary cache (今月・今年のデータのみ)
                     val today = LocalDate.now()
                     val isThisYear = undoTarget.expense.date.year == today.year
-                    val isThisMonth = isThisYear && undoTarget.expense.date.monthValue == today.monthValue
+                    val isInSalaryCycle = isThisYear && isInCurrentSalaryCycle(undoTarget.expense.date, today)
+                    val splitAmount = undoTarget.expense.amount / undoTarget.expense.splitCount
                     if (isThisYear) {
-                        summaryCache.adjust(-undoTarget.expense.amount, adjustYearly = true, adjustMonthly = isThisMonth)
+                        summaryCache.adjust(-splitAmount, adjustYearly = true, adjustMonthly = isInSalaryCycle)
                     }
 
                     // Update pie chart cache
@@ -597,6 +608,24 @@ class ExpenseViewModel @Inject constructor(
         val period = _uiState.value.selectedPeriod
         val updated = pieChartCache.get(period)
         _uiState.update { it.copy(pieChartData = updated) }
+    }
+
+    /**
+     * 指定日が今日を基準とした給料日サイクル（25日〜翌月24日）内かどうかを判定する。
+     * today が25日以降: cycleStart=today月25日, cycleEnd=翌月24日
+     * today が24日以前: cycleStart=前月25日, cycleEnd=today月24日
+     */
+    private fun isInCurrentSalaryCycle(date: LocalDate, today: LocalDate): Boolean {
+        val cycleStart: LocalDate
+        val cycleEnd: LocalDate
+        if (today.dayOfMonth >= 25) {
+            cycleStart = today.withDayOfMonth(25)
+            cycleEnd = today.plusMonths(1).withDayOfMonth(24)
+        } else {
+            cycleStart = today.minusMonths(1).withDayOfMonth(25)
+            cycleEnd = today.withDayOfMonth(24)
+        }
+        return !date.isBefore(cycleStart) && !date.isAfter(cycleEnd)
     }
 
     private suspend fun updatePieChartCacheOnUndo(expense: ExpenseRecord) {

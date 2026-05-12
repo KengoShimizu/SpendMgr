@@ -19,15 +19,16 @@ SpendMgrは、個人の日常経費を迅速に記録し、Googleスプレッド
 - **SpendMgr_Folder**: Google Driveのトップレベルに作成される「SpendMgr」フォルダ
 - **Yearly_Spreadsheet**: SpendMgr_Folderに年ごとに作成されるGoogleスプレッドシート（例: 2026, 2027）
 - **Monthly_Sheet**: Yearly_Spreadsheetの月別シート（1月〜12月）
-- **Monthly_Sheet_Header**: @Monthly_Sheetの1行目に設定されるヘッダー行。「日付」「金額」「カテゴリ」の3列で構成
-- **Expense_Record**: 金額、日付、カテゴリの3項目で構成される1件の経費データ
+- **Monthly_Sheet_Header**: @Monthly_Sheetの1行目に設定されるヘッダー行。「日付」「金額」「カテゴリ」「カード払い」「割り勘人数」の5列で構成
+- **Expense_Record**: 金額、日付、カテゴリ、カード払いフラグ、割り勘人数の5項目で構成される1件の経費データ
 - **Undo_Snackbar**: 経費記録成功後に画面下部に表示される「取り消し」ボタン、タップすると追記処理をスプレッドシートから削除される
-- **Expense_Summary_Area**: Expense_Entry_Screenに表示される今年の合計経費と今月の合計経費を表示するエリア
+- **Expense_Summary_Area**: Expense_Entry_Screenに表示される今年の合計経費と今月（給料日サイクル）の合計経費を表示するエリア
 - **Summary_Fetcher**: Summary_SheetおよびMonthly_Sheetから合計経費を取得するモジュール
+- **Salary_Cycle**: 給料日サイクル。毎月25日〜翌月24日の期間。今日が25日以降なら「今月25日〜翌月24日」、24日以前なら「前月25日〜今月24日」が現在のサイクルとなる
+- **Split_Count**: 割り勘人数。1〜10人を選択可能。デフォルトは1人。スプレッドシートのE列に記録される
 - **Allowance_Settings**: 毎月のお小遣い額を設定・保存する機能。設定値はアプリ内で固定管理
 - **Summary_Display_Modes**: Expense_Summary_Areaの表示モード。通常表示（合計額）と節約表示（お小遣い額超過）の2種類がある
 - **Summary_Cache**: 合計値をローカルに保持するキャッシュ。DataStoreに永続化されるためアプリkill後も値が保持される。起動時はDataStoreから即座に値を復元し、バックグラウンドでスプレッドシートから最新値を取得する。記録追加・取り消し成功時はローカルで加算減算し、API呼び出しを最小化する
-- **Monthly_Sheet_Header**: @Monthly_Sheetの1行目に設定されるヘッダー行。「日付」「金額」「カテゴリ」の3列で構成される
 - **Settings_Icon**: Expense_Entry_Screenの右上に配置されるギアアイコン。タップするとAllowance_Dialogを表示する
 - **Allowance_Dialog**: お小遣い額を設定するためのダイアログ。現在の設定値を表示し、確認・保存・削除が可能
 
@@ -39,7 +40,7 @@ SpendMgrは、個人の日常経費を迅速に記録し、Googleスプレッド
 
 #### Acceptance Criteria
 
-1. WHEN SpendMgr_App が起動された時、THE Expense_Entry_Screen SHALL 金額入力欄、日付入力欄、カテゴリ入力欄、Record_Button、Settings_Icon、Open_Spreadsheet_Button を表示する
+1. WHEN SpendMgr_App が起動された時、THE Expense_Entry_Screen SHALL 金額入力欄、日付入力欄、カテゴリ入力欄、割り勘人数プルダウン、Record_Button、Settings_Icon、Open_Spreadsheet_Button を表示する
 2. THE Expense_Entry_Screen SHALL 1行目に1列で操作可能な状態になる
 
 ### Requirement 2: 金額入力（数値キーボード）
@@ -55,12 +56,24 @@ SpendMgrは、個人の日常経費を迅速に記録し、Googleスプレッド
 5. THE Amount_Input SHALL IMEアクションをNext（imeAction = ImeAction.Next）に設定する
 6. WHEN ユーザーがAmount_InputでIMEアクションキー（IMEアクション: Next）をタップした時、THE Amount_Input SHALL フォーカスをCategory_Inputに移動する
 
+### Requirement 2b: 割り勘人数の入力
+
+**User Story:** ユーザーとして、割り勘した際の人数を入力できるようにしたい。実際の自己負担額を正確に記録するため。
+
+#### Acceptance Criteria
+
+1. THE Expense_Entry_Screen SHALL クレジットカード払いチェックボックスの下に割り勘人数プルダウンを表示する
+2. THE 割り勘人数プルダウン SHALL 1人〜10人を選択肢として表示し、デフォルトは1人とする
+3. WHEN 経費が記録される時、THE GoogleSheetsRepository SHALL スプレッドシートのE列に選択された割り勘人数を記録する
+4. THE Expense_Summary_Area に表示される今月の合計額 SHALL 各経費の金額を割り勘人数で割った値（切り捨て）の合計とする
+5. WHEN 経費記録が成功した時、THE 割り勘人数プルダウン SHALL 1人にリセットされる
+6. THE 家計立替金額（creditCardTotal）SHALL 割り勘前の金額（B列の値）を合計した値とする（割り勘人数で割らない）
+
 ### Requirement 3: 日付入力のデフォルト設定
 
 **User Story:** ユーザーとして、日付が本日の日付でデフォルト設定されていてほしい。ほとんどの場合は当日の支出を記録するため、入力の手間を省きたい。
 
 #### Acceptance Criteria
-
 
 1. WHEN SpendMgr_App が起動された時、THE Date_Input SHALL 本日の日付がデフォルト設定された状態で表示される
 2. THE Date_Input SHALL カレンダーUIで日付を変更できる
@@ -83,7 +96,7 @@ SpendMgrは、個人の日常経費を迅速に記録し、Googleスプレッド
 
 #### Acceptance Criteria
 
-1. WHEN ユーザーがRecord_Buttonをタップした時、THE SpendMgr_App SHALL まずExpense_RecordをPendingExpenseRepositoryにローカル保存し、その後Google_Sheets_Connectorを通じてExpense_Recordの日付の年に対するYearly_Spreadsheetを検索し、日付の月に対するMonthly_Sheet（例: 4月なら「4月」シート）の最終行の次にExpense_Record（金額、日付、カテゴリ）を追記する
+1. WHEN ユーザーがRecord_Buttonをタップした時、THE SpendMgr_App SHALL まずExpense_RecordをPendingExpenseRepositoryにローカル保存し、その後Google_Sheets_Connectorを通じてExpense_Recordの日付の年に対するYearly_Spreadsheetを検索し、日付の月に対するMonthly_Sheet（例: 4月なら「4月」シート）の最終行の次にExpense_Record（金額、日付、カテゴリ、カード払いフラグ、割り勘人数）を追記する
 2. WHEN スプレッドシートへの追記が成功した時、THE SpendMgr_App SHALL 追記成功後にExpense_Record（金額、日付、カテゴリ）を追記する
 3. WHEN 追記が成功した時、THE Date_Input SHALL 本日の日付に再設定する
 4. IF スプレッドシートへの追記に失敗した時、THEN THE SpendMgr_App SHALL エラーメッセージを表示する（Expense_Recordはローカルに保持済み）
@@ -128,8 +141,8 @@ SpendMgrは、個人の日常経費を迅速に記録し、Googleスプレッド
 1. WHEN 経費記録が実行される時、THE Google_Drive_Manager SHALL Expense_Recordの日付の年（例: 「2026」）がSpendMgr_Folderに存在するか確認する
 2. WHEN 対応するYearly_Spreadsheetが存在しない場合、THE Google_Drive_Manager SHALL SpendMgr_Folderに新しいYearly_Spreadsheet（例: 「2026」）を作成する
 3. 「6月」「7月」「8月」「9月」「10月」「11月」「12月」の12個のMonthly_Sheetを作成する
-4. WHEN 初めてYearly_Spreadsheetが作成される時、THE Google_Drive_Manager SHALL @Monthly_Sheetの1行目にMonthly_Sheet_Headerとして「日付」（A列）「金額」（B列）「カテゴリ」（C列）のヘッダー行を設定し、経費データ入力が2行目以降に開始されるようにする
-5. THE Monthly_Sheet SHALL 経費データを人月・日付（D/M形式）、円形金額（数値）、（列×カテゴリ（文字列）の形式で格納する
+4. WHEN 初めてYearly_Spreadsheetが作成される時、THE Google_Drive_Manager SHALL @Monthly_Sheetの1行目にMonthly_Sheet_Headerとして「日付」（A列）「金額」（B列）「カテゴリ」（C列）「カード払い」（D列）「割り勘人数」（E列）のヘッダー行を設定し、経費データ入力が2行目以降に開始されるようにする
+5. THE Monthly_Sheet SHALL 経費データを日付（M/d形式）、円単位金額（数値）、カテゴリ（文字列）、カード払いフラグ（TRUE/FALSE）、割り勘人数（整数）の形式で格納する
 6. WHEN 対応するYearly_Spreadsheetが既に存在する場合、THE Google_Drive_Manager SHALL 既存のスプレッドシートを再利用し、重複作成しない
 
 ### Requirement 10: まとめシートの月別合計表示
@@ -138,8 +151,9 @@ SpendMgrは、個人の日常経費を迅速に記録し、Googleスプレッド
 
 #### Acceptance Criteria
 
-1. WHEN Yearly_Spreadsheetが新規作成された時、THE Google_Drive_Manager SHALL Summary_Sheetに「月」列と「合計」列のヘッダーを設定し、1月〜12月の各行に対応するMonthly_Sheetの8列（金額列）の合計を参照するSUM関数を設定する
+1. WHEN Yearly_Spreadsheetが新規作成された時、THE Google_Drive_Manager SHALL Summary_Sheetに「月」列と「合計」列のヘッダーを設定し、1月〜12月の各行に対応するMonthly_Sheetの金額（B列）を割り勘人数（E列）で割った値の合計を参照するSUMPRODUCT関数を設定する
 2. THE Summary_Sheet SHALL @Monthly_Sheetにデータが追記されるたびに合計が自動更新されるようにスプレッドシート関数で実現する
+3. THE Summary_Sheet の合計式 SHALL E列が空（旧データ）の場合は割り勘人数を1として扱う
 
 ### Requirement 11: スプレッドシートへのワンタップ遷移
 
@@ -168,16 +182,16 @@ SpendMgrは、個人の日常経費を迅速に記録し、Googleスプレッド
 8. THE SpendMgr_App SHALL 取り消し対象のExpense_Recordの情報（スプレッドシートID、行番号）をUndo_Snackbarが表示されている間のみ一時的に保持する
 9. IF 取り消し処理中にGoogle_Sheets_Connectorがスプレッドシートの接続に失敗した場合、THEN THE SpendMgr_App SHALL エラーメッセージを表示する
 
-### Requirement 13: 今年・今月の合計経費表示
+### Requirement 13: 今年・今月（給料日サイクル）の合計経費表示
 
-**User Story:** ユーザーとして、経費入力画面で年と今月の合計経費を確認したい。目の支出状況を把握しながら記録できるようにするため。
+**User Story:** ユーザーとして、経費入力画面で今年の合計経費と現在の給料日サイクル（25日〜翌月24日）の合計経費を確認したい。目の支出状況を把握しながら記録できるようにするため。
 
 #### Acceptance Criteria
 
-1. THE Expense_Entry_Screen SHALL Expense_Summary_Areaを経費入力画面に表示し、今年の合計経費と今月の合計経費を表示する
-2. WHEN SpendMgr_Appが起動された時、THE Summary_Fetcher SHALL Summary_Sheetから今年の合計経費を取得してMonthly_Sheetから今月の合計経費を取得し、Expense_Summary_Areaに反映する
-3. WHEN 経費記録の取り込みが成功した時、THE SpendMgr_App SHALL Summary_Cacheのローカルキャッシュを加算更新する。記録した経費が今年かつ今月の場合は yearlyTotal と monthlyTotal の両方を加算する。今年だが今月以外の場合は yearlyTotal のみ加算する。今年以外の場合は更新しない。スプレッドシートからの再取得は行わない
-4. WHEN 経費記録の取り消しが成功した時、THE SpendMgr_App SHALL Summary_Cacheのローカルキャッシュを減算更新する。取り消した経費が今年かつ今月の場合は yearlyTotal と monthlyTotal の両方を減算する。今年だが今月以外の場合は yearlyTotal のみ減算する。今年以外の場合は更新しない。スプレッドシートからの再取得は行わない
+1. THE Expense_Entry_Screen SHALL Expense_Summary_Areaを経費入力画面に表示し、今年の合計経費と現在の給料日サイクルの合計経費を表示する。いずれも各経費の金額を割り勘人数で割った値（切り捨て）の合計とする
+2. WHEN SpendMgr_Appが起動された時、THE Summary_Fetcher SHALL Summary_Sheetから今年の合計経費を取得し、現在の給料日サイクル（Salary_Cycle）に該当する経費をMonthly_Sheetから取得してExpense_Summary_Areaに反映する
+3. WHEN 経費記録の取り込みが成功した時、THE SpendMgr_App SHALL Summary_Cacheのローカルキャッシュを加算更新する。記録した経費が今年かつ現在のSalary_Cycle内の場合は yearlyTotal と monthlyTotal の両方を加算する。今年だが現在のSalary_Cycle外の場合は yearlyTotal のみ加算する。今年以外の場合は更新しない。スプレッドシートからの再取得は行わない
+4. WHEN 経費記録の取り消しが成功した時、THE SpendMgr_App SHALL Summary_Cacheのローカルキャッシュを減算更新する。取り消した経費が今年かつ現在のSalary_Cycle内の場合は yearlyTotal と monthlyTotal の両方を減算する。今年だが現在のSalary_Cycle外の場合は yearlyTotal のみ減算する。今年以外の場合は更新しない。スプレッドシートからの再取得は行わない
 5. WHEN ユーザーがExpense_Entry_Screenでプルトゥリフレッシュ操作を行った時、THE Summary_Fetcher SHALL スプレッドシートから合計値を再取得してSummary_Cacheを更新し、Expense_Summary_Areaに反映する
 6. THE SpendMgr_App SHALL 合計取得のAPI呼び出しをアプリ起動時とプルトゥリフレッシュ時のみに限定する
 7. IF Summary_FetcherがスプレッドシートへのAPIに失敗した場合、THEN THE Expense_Summary_Area SHALL 前回取得済みのキャッシュ値を表示し続ける。キャッシュが存在しない場合のみ「—」をプレースホルダーとして表示する

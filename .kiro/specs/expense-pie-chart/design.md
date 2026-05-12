@@ -294,6 +294,11 @@ object CategoryColorAssigner {
 interface GoogleSheetsRepository {
     // ... 既存のメソッド ...
 
+    /**
+     * 指定シートのカテゴリ列（C列）と金額列（B列）のデータを取得する。
+     * 金額は割り勘人数（E列）で割った値（切り捨て）を返す。E列が空の旧データは割り勘人数1として扱う。
+     * ヘッダー行（1行目）は除外される。
+     */
     suspend fun fetchCategoryAmounts(
         spreadsheetId: String,
         sheetName: String
@@ -301,6 +306,7 @@ interface GoogleSheetsRepository {
 
     /**
      * 指定シートのカード払い（D列が TRUE または ○）の合計額を取得する。
+     * 割り勘前の金額（B列の値）を合計する（E列は参照しない）。
      * ヘッダー行（1行目）は除外される。既存データでD列が空の行は集計から除外する。
      */
     suspend fun fetchCreditCardTotal(
@@ -311,8 +317,12 @@ interface GoogleSheetsRepository {
 ```
 
 スプレッドシートへの書き込み仕様：
-- `appendExpense()`: D列に `TRUE`/`FALSE` を `USER_ENTERED` で書き込む
-- `createYearlySpreadsheet()`: 各月シートのD1に「カード払い」ヘッダーを設定し、D2:D1000 にチェックボックス入力規則（`BooleanCondition.type = "BOOLEAN"`）を設定する
+- `appendExpense()`: D列に `TRUE`/`FALSE`、E列に割り勘人数を `USER_ENTERED` で書き込む
+- `createYearlySpreadsheet()`: 各月シートのD1に「カード払い」、E1に「割り勘人数」ヘッダーを設定し、D2:D1000 にチェックボックス入力規則（`BooleanCondition.type = "BOOLEAN"`）を設定する
+
+`fetchCategoryAmounts()` は金額（B列）を割り勘人数（E列）で割った値を返す。E列が空の旧データは割り勘人数1として扱う。
+
+`fetchCreditCardTotal()` は割り勘前の金額（B列の値）を合計する（E列は参照しない）。
 
 #### GoogleDriveRepository (拡張)
 既存の GoogleDriveRepository に新しいメソッドを追加する。

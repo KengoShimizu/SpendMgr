@@ -11,7 +11,7 @@ import com.example.spendmgr.data.local.entity.PendingExpenseEntity
 
 @Database(
     entities = [CategoryHistoryEntity::class, PendingExpenseEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class SpendMgrDatabase : RoomDatabase() {
@@ -31,7 +31,7 @@ abstract class SpendMgrDatabase : RoomDatabase() {
                     SpendMgrDatabase::class.java,
                     "spendmgr_database"
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also { INSTANCE = it }
             }
         }
@@ -40,6 +40,14 @@ abstract class SpendMgrDatabase : RoomDatabase() {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE pending_expenses ADD COLUMN isCreditCard INTEGER NOT NULL DEFAULT 1"
+                )
+            }
+        }
+
+        private val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE pending_expenses ADD COLUMN splitCount INTEGER NOT NULL DEFAULT 1"
                 )
             }
         }

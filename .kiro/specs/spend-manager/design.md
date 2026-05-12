@@ -304,6 +304,10 @@ data class SpreadsheetTarget(
 #### SummaryFetcher
 Summary_Sheet上のMonthly_Sheetから合計額を取得する。アプリ起動時とプルトゥリフレッシュ時のみスプレッドシートからフェッチし、SummaryCacheに保存する。スプレッドシート未作成時やオフライン時はnullを返すが、**キャッシュは上書きしない**（DataStoreの値を保持する）。これによりkill後の再起動時も前回の値が即座に表示される。
 
+今月の合計は**給料日サイクル（Salary_Cycle）**ベースで集計する。今日が25日以降なら「今月25日〜翌月24日」、24日以前なら「前月25日〜今月24日」の範囲の経費を合計する。年をまたぐ場合（12月25日〜1月24日）は前年スプレッドシートの12月分も参照する。
+
+各経費の金額は割り勘人数（E列）で割った値（切り捨て）を使用する。E列が空の旧データは割り勘人数1として扱う。
+
 ```kotlin
 class SummaryFetcher(
     private val googleSheetsRepository: GoogleSheetsRepository,
@@ -312,12 +316,18 @@ class SummaryFetcher(
     private val summaryCache: SummaryCache
 ) {
     /**
-     * 今年の合計額と今月の合計額をスプレッドシートから取得し、SummaryCacheに保存する。
+     * 今年の合計額と現在の給料日サイクルの合計額をスプレッドシートから取得し、SummaryCacheに保存する。
      * アプリ起動時とプルトゥリフレッシュ時に呼び出される。
      * スプレッドシートが存在しない場合、認証未完了の場合。
      * またはネットワークエラーの場合はnullを返す。
      */
     suspend fun fetchSummary(): SummaryResult
+
+    /**
+     * 給料日サイクル（25日〜翌月24日）の合計額を計算する。
+     * スプレッドシートのA列（"M/d"形式）で日付フィルタリングを行う。
+     */
+    private suspend fun fetchSalaryCycleTotal(today: LocalDate, spreadsheetId: String): Int?
 }
 ```
 
@@ -391,7 +401,7 @@ class TokenProvider(context: Context) : HttpRequestInitializer {
 interface GoogleSheetsRepository {
     /**
      * 指定されたスプレッドシートの指定シートに経費を追記する。
-     * 各Monthly_Sheetは1行目がヘッダー行（A列: 日付、B列: 金額、C列: カテゴリ）で、
+     * 各Monthly_Sheetは1行目がヘッダー行（A列: 日付、B列: 金額、C列: カテゴリ、D列: カード払い、E列: 割り勘人数）で、
      * データは2行目以降に追記される。
      * @return 追記された行番号を含むAppendResult
      */
@@ -413,7 +423,7 @@ interface GoogleSheetsRepository {
 
     /**
      * 新規スプレッドシートを作成し、まとめシート + 12ヶ月シートを初期化する。
-     * 各月シートの1行目にはヘッダー行（A列: 日付、B列: 金額、C列: カテゴリ）を設定する。
+     * 各月シートの1行目にはヘッダー行（A列: 日付、B列: 金額、C列: カテゴリ、D列: カード払い、E列: 割り勘人数）を設定する。
      * @return 作成されたスプレッドシートのID
      */
     suspend fun createYearlySpreadsheet(
@@ -422,8 +432,9 @@ interface GoogleSheetsRepository {
     ): Result<String>
 
     /**
-     * まとめシートにSUM関数を設定する。
-     * 各月シートのB列（金額列）の合計を参照するSUM関数を設定する。
+     * まとめシートにSUMPRODUCT関数を設定する。
+     * 各月シートの金額（B列）を割り勘人数（E列）で割った値の合計を参照する。
+     * E列が空の旧データは割り勘人数1として扱う。
      */
     suspend fun setupSummarySheet(
         spreadsheetId: String
@@ -431,6 +442,9 @@ interface GoogleSheetsRepository {
 
     /**
      * まとめシートから今年の合計額を取得する。
+     * 各月シートの金額（B列）を割り勘人数（E列）で割った値の合計を直接計算する。
+     * まとめシートのSUM式は旧データとの互換性のため参照しない。
+     * E列が空の旧データは割り勘人数1として扱う。
      * @return 今年の合計額（円）。取得失敗時はnull
      */
     suspend fun fetchYearlyTotal(
@@ -438,13 +452,43 @@ interface GoogleSheetsRepository {
     ): Result<Int?>
 
     /**
-     * 指定月シートから今月の合計額を取得する。
-     * @return 今月の合計額（円）。取得失敗時はnull
+     * 指定月シートから合計額を取得する（割り勘人数で割った値の合計）。
+     * @return 合計額（円）。取得失敗時はnull
      */
     suspend fun fetchMonthlyTotal(
         spreadsheetId: String,
         sheetName: String
     ): Result<Int?>
+
+    /**
+     * 指定シートのカテゴリ列（C列）と金額列（B列）のデータを取得する（割り勘人数で割った値）。
+     * ヘッダー行（1行目）は除外される。
+     */
+    suspend fun fetchCategoryAmounts(
+        spreadsheetId: String,
+        sheetName: String
+    ): Result<List<Pair<String, Int>>>
+
+    /**
+     * 指定シートのカード支払い（D列がTRUEまたは○）の合計額を取得する。
+     * 割り勘前の金額（B列の値）を合計する（割り勘人数で割らない）。
+     * ヘッダー行（1行目）は除外される。
+     */
+    suspend fun fetchCreditCardTotal(
+        spreadsheetId: String,
+        sheetName: String
+    ): Result<Int?>
+
+    /**
+     * 指定シートから日付・金額・割り勘人数の生データを取得する。
+     * 給料日サイクル集計（25日〜翌月24日）に使用する。
+     * ヘッダー行（1行目）は除外される。
+     * @return Triple(日付文字列 "M/d", 金額, 割り勘人数) のリスト
+     */
+    suspend fun fetchRawExpenses(
+        spreadsheetId: String,
+        sheetName: String
+    ): Result<List<Triple<String, Int, Int>>>
 }
 ```
 
@@ -518,7 +562,9 @@ data class ExpenseRecord(
     val id: Long = 0,
     val amount: Int,        // 円単位の整数
     val date: LocalDate,
-    val category: String
+    val category: String,
+    val isCreditCard: Boolean = true,  // クレジットカード払いか否か（デフォルト: カード払い）
+    val splitCount: Int = 1            // 割り勘人数（デフォルト: 1人）
 )
 ```
 
@@ -561,6 +607,8 @@ data class ExpenseUiState(
     val amountText: String = "",        // 表示用の金額文字列
     val date: LocalDate = LocalDate.now(),
     val category: String = "",
+    val isCreditCard: Boolean = true,   // クレジットカード払いか否か（デフォルト: カード払い）
+    val splitCount: Int = 1,            // 割り勘人数（デフォルト: 1人）
     val suggestions: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val isAuthenticated: Boolean = false,
@@ -571,7 +619,7 @@ data class ExpenseUiState(
     val showUndoSnackbar: Boolean = false,
     val undoExpenseLabel: String = "",  // Undo Snackbarに表示する記録内容（例: "4/22 ¥1,500 ランチ"）
     val yearlyTotal: Int? = null,       // 今年の合計額（円）。取得失敗/未取得時はnull
-    val monthlyTotal: Int? = null,      // 今月の合計額（円）。取得失敗/未取得時はnull
+    val monthlyTotal: Int? = null,      // 現在の給料日サイクル合計額（円）。取得失敗/未取得時はnull
     val isSummaryLoading: Boolean = false, // 合計額取得中フラグ
     val isRefreshing: Boolean = false,  // プルトゥリフレッシュフラグ
     val allowanceAmount: Int? = null,   // 現在のお小遣い額（円）。未設定時はnull
@@ -599,9 +647,15 @@ data class PendingExpenseEntity(
     val amount: Int,
     val date: String,       // "yyyy-MM-dd" 形式（LocalDate.toString()）
     val category: String,
+    val isCreditCard: Boolean = true,
+    val splitCount: Int = 1,    // 割り勘人数（DBバージョン3で追加）
     val createdAt: Long = System.currentTimeMillis()
 )
 ```
+
+DBマイグレーション履歴:
+- version 1 → 2: `isCreditCard` カラム追加
+- version 2 → 3: `splitCount` カラム追加
 
 ## Correctness Properties
 
